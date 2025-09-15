@@ -1,0 +1,261 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String             @id @default(uuid())
+  email              String             @unique
+  name               String
+  password           String
+  role               Role               @default(USER)
+  quizAttempts       QuizAttempt[]
+  payments           Payment[]
+  leaderboardEntries LeaderBoardEntry[]
+  evaluatorAttempts  EvaluatorAttempt[] // New relation for evaluator
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+}
+
+model Admin {
+  id         String      @id @default(uuid())
+  email      String      @unique
+  name       String
+  password   String
+  isSuper    Boolean     @default(false)
+  role       Role        @default(ADMIN)
+  subAdmins  SubAdmin[]
+  quizzes    Quiz[]
+  promoCodes PromoCode[]
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+}
+
+model SubAdmin {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name       String
+  password  String
+  role      Role     @default(SUB_ADMIN)
+  adminId   String
+  admin     Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Quiz {
+  id          String        @id @default(uuid())
+  title       String
+  description String
+  price       Float?
+  startDate   DateTime?
+  endDate     DateTime?
+  adminId     String
+  admin       Admin         @relation(fields: [adminId], references: [id])
+  questions   Question[]
+  attempts    QuizAttempt[]
+  leaderboard LeaderBoard?
+  payments    Payment[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model Question {
+  id            String   @id @default(uuid())
+  text          String
+  quizId        String
+  quiz          Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  options       Option[]
+  categoory     String
+  correctAnswer String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Option {
+  id         String   @id @default(uuid())
+  text       String
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model QuizAttempt {
+  id        String   @id @default(uuid())
+  userId    String
+  quizId    String
+  user      User     @relation(fields: [userId], references: [id])
+  quiz      Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  score     Int
+  completed Boolean  @default(false)
+  category  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, quizId])
+}
+
+model LeaderBoard {
+  id        String             @id @default(uuid())
+  quizId    String             @unique
+  quiz      Quiz               @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  entries   LeaderBoardEntry[]
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+}
+
+model LeaderBoardEntry {
+  id            String      @id @default(uuid())
+  leaderboardId String
+  leaderboard   LeaderBoard @relation(fields: [leaderboardId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+  score         Int
+  category      String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([leaderboardId, userId, category])
+}
+
+model Payment {
+  id          String        @id @default(uuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id])
+  amount      Float
+  quizId      String
+  quiz        Quiz          @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  status      PaymentStatus @default(PENDING)
+  promoCodeId String?
+  promoCode   PromoCode?    @relation(fields: [promoCodeId], references: [id])
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model PromoCode {
+  id         String    @id @default(uuid())
+  code       String    @unique
+  adminId    String
+  admin      Admin     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  usageCount Int       @default(0)
+  isActive   Boolean   @default(true)
+  payments   Payment[]
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+// New models for Evaluator feature
+model EvaluatorTest {
+  id          String             @id @default(uuid())
+  concept     String             @unique // java, python, sql, etc.
+  description String
+  isActive    Boolean            @default(true)
+  attempts    EvaluatorAttempt[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+}
+
+model EvaluatorAttempt {
+  id           String                @id @default(uuid())
+  userId       String
+  user         User                  @relation(fields: [userId], references: [id])
+  testId       String
+  test         EvaluatorTest         @relation(fields: [testId], references: [id], onDelete: Cascade)
+  easyScore    Int                   @default(0)
+  mediumScore  Int                   @default(0)
+  hardScore    Int                   @default(0)
+  totalScore   Int                   @default(0)
+  percentage   Float                 @default(0)
+  performance  PerformanceLevel      @default(NEEDS_IMPROVEMENT)
+  weakAreas    String[]              @default([]) // Array of weak concept areas
+  completed    Boolean               @default(false)
+  questions    EvaluatorQuestion[]
+  answers      EvaluatorAnswer[]
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  @@unique([userId, testId]) // User can have only one active attempt per test
+}
+
+model EvaluatorQuestion {
+  id           String            @id @default(uuid())
+  attemptId    String
+  attempt      EvaluatorAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionText String
+  options      String[]          // Array of 4 options
+  correctAnswer String
+  difficulty   DifficultyLevel
+  concept      String            // Specific concept within the test (e.g., "loops", "arrays" for Java)
+  explanation  String?           // Explanation for the correct answer
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+}
+
+model EvaluatorAnswer {
+  id           String            @id @default(uuid())
+  attemptId    String
+  attempt      EvaluatorAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId   String
+  userAnswer   String
+  isCorrect    Boolean
+  difficulty   DifficultyLevel
+  concept      String
+  timeSpent    Int?              // Time spent on question in seconds
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+}
+
+model LearningResource {
+  id          String        @id @default(uuid())
+  concept     String        // The concept this resource is for
+  subConcept  String?       // Specific sub-concept (e.g., "loops" within "java")
+  title       String
+  description String
+  type        ResourceType
+  url         String
+  difficulty  DifficultyLevel
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([concept, subConcept, difficulty])
+}
+
+enum Role {
+  USER
+  ADMIN
+  SUB_ADMIN
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum DifficultyLevel {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum PerformanceLevel {
+  EXCELLENT      // 90-100%
+  GOOD           // 75-89%
+  AVERAGE        // 60-74%
+  NEEDS_IMPROVEMENT // Below 60%
+}
+
+enum ResourceType {
+  YOUTUBE_VIDEO
+  BLOG_ARTICLE
+  DOCUMENTATION
+  TUTORIAL
+  PRACTICE_PROBLEMS
+  BOOK_REFERENCE
+}
